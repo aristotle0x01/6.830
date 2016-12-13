@@ -185,7 +185,6 @@ public class TupleDesc implements Serializable {
     		fieldAr[i+td1.numFields()] = td2.tdItems[i].fieldName;
     	}
     	
-    	
         return new TupleDesc(typeAr,fieldAr);
     }
 
