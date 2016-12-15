@@ -44,7 +44,7 @@ public class TupleDesc implements Serializable {
      * */
     public Iterator<TDItem> iterator() {
         // some code goes here
-        return (Iterator<TDItem>) Arrays.asList(tdItems);
+        return (Iterator<TDItem>) Arrays.asList(tdItems).iterator();
     }
 
     private static final long serialVersionUID = 1L;

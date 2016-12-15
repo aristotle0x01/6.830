@@ -155,6 +155,8 @@ public class HeapFile implements DbFile {
 		@Override
 		public void open() throws DbException, TransactionAbortedException {
 			// TODO Auto-generated method stub
+			al.clear();
+			
 			for(int i=0;i<heapFile.numPages();i++){
 				HeapPageId pid = new HeapPageId(heapFile.getId(),i);
 				HeapPage page = (HeapPage)Database.getBufferPool().getPage(tid, pid, Permissions.READ_ONLY);
@@ -182,13 +184,14 @@ public class HeapFile implements DbFile {
 		@Override
 		public void rewind() throws DbException, TransactionAbortedException {
 			// TODO Auto-generated method stub
-			it = al.iterator();
+			open();
 		}
 
 		@Override
 		public void close() {
 			// TODO Auto-generated method stub
-    		it = new ArrayList<Tuple>().iterator();
+			al.clear();
+			it = al.iterator();
 		}
     	
     }
