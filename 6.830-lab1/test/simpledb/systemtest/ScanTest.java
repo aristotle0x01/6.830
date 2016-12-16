@@ -27,6 +27,7 @@ public class ScanTest extends SimpleDbTestBase {
             throws IOException, DbException, TransactionAbortedException {
         for (int columns : columnSizes) {
             for (int rows : rowSizes) {
+            	System.out.println(String.format("c:%d r:%d", columns,rows));
                 ArrayList<ArrayList<Integer>> tuples = new ArrayList<ArrayList<Integer>>();
                 HeapFile f = SystemTestUtil.createRandomHeapFile(columns, rows, null, tuples);
                 SystemTestUtil.matchTuples(f, tuples);

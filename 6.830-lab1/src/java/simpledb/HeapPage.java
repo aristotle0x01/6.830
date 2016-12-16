@@ -67,7 +67,7 @@ public class HeapPage implements Page {
     */
     private int getNumTuples() {        
         // some code goes here
-        int num = (int)Math.floor((BufferPool.getPageSize()*8) / (td.getSize() * 8 + 1));
+        int num = (int)Math.floor((BufferPool.getPageSize()*8*1.0) / (td.getSize() * 8 + 1));
         return num;
     }
 
@@ -77,7 +77,7 @@ public class HeapPage implements Page {
      */
     private int getHeaderSize() {        
         // some code goes here
-        return (int)Math.ceil(getNumTuples() / 8);
+        return (int)Math.ceil(getNumTuples()*1.0 / 8);
                  
     }
     

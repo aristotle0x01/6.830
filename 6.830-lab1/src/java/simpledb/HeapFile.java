@@ -112,7 +112,7 @@ public class HeapFile implements DbFile {
      */
     public int numPages() {
         // some code goes here
-    	int num = (int)Math.floor(file.length() / BufferPool.getPageSize());
+    	int num = (int)Math.floor(file.length() * 1.0 / BufferPool.getPageSize());
         return num;
     }
 
