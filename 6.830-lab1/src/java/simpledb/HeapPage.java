@@ -318,19 +318,13 @@ public class HeapPage implements Page {
      */
     public Iterator<Tuple> iterator() {
         // some code goes here
-    	if(getNumEmptySlots() == 0){
-    		return (Iterator<Tuple>) Arrays.asList(tuples).iterator();
-    	}
-    	
-    	int numNonEmpty = numSlots - getNumEmptySlots();
-    	Tuple filledTuples[] = new Tuple[numNonEmpty];
-    	int k = 0;
+    	ArrayList<Tuple> filledTuples = new ArrayList<Tuple>();
     	for(int i=0;i<numSlots;i++){
     		if(isSlotUsed(i)){
-    			filledTuples[k++] = tuples[i];
+    			filledTuples.add(tuples[i]);
     		}
     	}
-        return (Iterator<Tuple>) Arrays.asList(filledTuples).iterator();
+        return filledTuples.iterator();
     }
 }
 

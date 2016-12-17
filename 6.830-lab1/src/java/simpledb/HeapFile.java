@@ -143,57 +143,71 @@ public class HeapFile implements DbFile {
     	private final HeapFile heapFile;
     	private final TransactionId tid;
     	private Iterator<Tuple> it;
-    	private final ArrayList<Tuple> al;
+    	private int whichPage;
     	
     	public HeapFileIterator(HeapFile file, TransactionId tid){
     		heapFile = file; 
     		this.tid = tid;
-    		al = new ArrayList<Tuple>();
-    		it = al.iterator();
     	}
 
 		@Override
 		public void open() throws DbException, TransactionAbortedException {
 			// TODO Auto-generated method stub
-			al.clear();
-			
-			for(int i=0;i<heapFile.numPages();i++){
-				HeapPageId pid = new HeapPageId(heapFile.getId(),i);
-				HeapPage page = (HeapPage)Database.getBufferPool().getPage(tid, pid, Permissions.READ_ONLY);
-				Iterator<Tuple> pit = page.iterator();
-				while(pit.hasNext()){
-					al.add(pit.next());
-				}
-			}
-			
-			it = al.iterator();
+			whichPage = 0;
+			it = getPageTuples(whichPage);
 		}
 
+		private Iterator<Tuple> getPageTuples(int pageNumber) throws TransactionAbortedException, DbException{
+			if(pageNumber >= 0 && pageNumber < heapFile.numPages()){
+				HeapPageId pid = new HeapPageId(heapFile.getId(),pageNumber);
+				HeapPage page = (HeapPage)Database.getBufferPool().getPage(tid, pid, Permissions.READ_ONLY);
+				return page.iterator();
+			}else{
+				throw new DbException(String.format("heapfile %d does not contain page %d!", pageNumber,heapFile.getId()));
+			}
+		}
+		
 		@Override
 		public boolean hasNext() throws DbException, TransactionAbortedException {
 			// TODO Auto-generated method stub
-			return it.hasNext();
+			if(it == null){
+				return false;
+			}
+			
+			if(!it.hasNext()){
+				if(whichPage < (heapFile.numPages()-1)){
+					whichPage++;
+					it = getPageTuples(whichPage);
+					return it.hasNext();
+				}else{
+					return false;
+				}
+			}else{
+				return true;
+			}
 		}
 
 		@Override
 		public Tuple next() throws DbException, TransactionAbortedException, NoSuchElementException {
 			// TODO Auto-generated method stub
+			if(it == null || !it.hasNext()){
+				throw new NoSuchElementException();
+			}
 			return it.next();
 		}
 
 		@Override
 		public void rewind() throws DbException, TransactionAbortedException {
 			// TODO Auto-generated method stub
+			close();
 			open();
 		}
 
 		@Override
 		public void close() {
 			// TODO Auto-generated method stub
-			al.clear();
-			it = al.iterator();
+			it = null;
 		}
-    	
     }
 }
 
