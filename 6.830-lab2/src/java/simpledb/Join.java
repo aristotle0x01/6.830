@@ -5,6 +5,10 @@ import java.util.*;
  * The Join operator implements the relational join operation.
  */
 public class Join extends Operator {
+	private final JoinPredicate p;
+	private final DbIterator child1;
+	private final DbIterator child2;
+	private Tuple t1;
 
     /**
      * Constructor.  Accepts to children to join and the predicate
@@ -16,6 +20,9 @@ public class Join extends Operator {
      */
     public Join(JoinPredicate p, DbIterator child1, DbIterator child2) {
         // some code goes here
+    	this.p = p;
+    	this.child1 = child1;
+    	this.child2 = child2;
     }
 
     /**
@@ -23,20 +30,29 @@ public class Join extends Operator {
      */
     public TupleDesc getTupleDesc() {
         // some code goes here
-        return null;
+    	return TupleDesc.merge(child1.getTupleDesc(), child2.getTupleDesc());
     }
 
     public void open()
         throws DbException, NoSuchElementException, TransactionAbortedException {
         // some code goes here
+    	child1.open();
+    	child2.open();
+    	t1 = child1.next();
     }
 
     public void close() {
         // some code goes here
+    	child1.close();
+    	child2.close();
+    	super.close();
+    	t1 = null;
     }
 
     public void rewind() throws DbException, TransactionAbortedException {
         // some code goes here
+    	close();
+    	open();
     }
 
     /**
@@ -59,7 +75,29 @@ public class Join extends Operator {
      * @see JoinPredicate#filter
      */
     protected Tuple fetchNext() throws TransactionAbortedException, DbException {
-        // some code goes here
-        return null;
+    	while(true){
+    		while(child2.hasNext()){
+    			Tuple t2 = child2.next();
+    			if(p.filter(t1, t2)){
+    				TupleDesc td = getTupleDesc();
+    				Tuple t = new Tuple(td);
+    				for(int i=0;i<t1.getTupleDesc().numFields();i++){
+    					t.setField(i, t1.getField(i));
+    				}
+    				for(int i=0;i<t2.getTupleDesc().numFields();i++){
+    					t.setField(i+t1.getTupleDesc().numFields(), t2.getField(i));
+    				}
+    				
+    				return t;
+    			}
+    		}
+    		
+    		if(child1.hasNext()){
+    			t1 = child1.next();
+    			child2.rewind();
+    		}else{
+    			return null;
+    		}
+    	}
     }
 }
