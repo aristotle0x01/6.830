@@ -1,9 +1,17 @@
 package simpledb;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 /**
  * Knows how to compute some aggregate over a set of StringFields.
  */
 public class StringAggregator implements Aggregator {
+	private final int gbfield;
+	private final Type gbfieldtype;
+	private final Map<String,Integer> aggregator;
 
     /**
      * Aggregate constructor
@@ -16,6 +24,13 @@ public class StringAggregator implements Aggregator {
 
     public StringAggregator(int gbfield, Type gbfieldtype, int afield, Op what) {
         // some code goes here
+    	if(!what.COUNT.equals(what)){
+    		throw new IllegalArgumentException("StringAggregator only support COUNT");
+    	}
+    	
+    	this.gbfield = gbfield;
+    	this.gbfieldtype = gbfieldtype;
+    	aggregator = new HashMap<String,Integer>();
     }
 
     /**
@@ -24,6 +39,31 @@ public class StringAggregator implements Aggregator {
      */
     public void mergeTupleIntoGroup(Tuple tup) {
         // some code goes here
+    	if(gbfieldtype == null){ // no grouping
+    		if(aggregator.containsKey("NO_GROUPING")){
+    			
+    			int nvalue = aggregator.get("NO_GROUPING") + 1;
+    			aggregator.put("NO_GROUPING", nvalue);
+    		}else{
+    			aggregator.put("NO_GROUPING", 1);
+    		}
+    	}else{
+    		String gbValue = new String("");
+    		if(Type.INT_TYPE.equals(gbfieldtype)){
+    			IntField field = (IntField)tup.getField(gbfield);
+    			gbValue = field.getValue() + "";
+    		}else{
+    			StringField field = (StringField)tup.getField(gbfield);
+    			gbValue = field.getValue();
+    		}
+    		
+    		if(aggregator.containsKey(gbValue)){
+    			int nvalue = aggregator.get(gbValue)+1;
+    			aggregator.put(gbValue, nvalue);
+    		}else{
+    			aggregator.put(gbValue, 1);
+    		}
+    	}
     }
 
     /**
@@ -36,7 +76,44 @@ public class StringAggregator implements Aggregator {
      */
     public DbIterator iterator() {
         // some code goes here
-        throw new UnsupportedOperationException("please implement me for lab2");
+    	List<Tuple> list = new ArrayList<Tuple>();
+    	if(gbfieldtype == null){ // no grouping
+    		Type[] type = new Type[1];
+    		type[0] = Type.INT_TYPE;
+    		TupleDesc desc = new TupleDesc(type);
+    		Tuple tup = new Tuple(desc);
+    		
+    		int value = aggregator.get("NO_GROUPING");
+    		IntField intfield = new IntField(value);
+    		tup.setField(0, intfield);
+    		list.add(tup);
+    		return new TupleIterator(desc,list);
+    	}else{
+    		Type[] type = new Type[2];
+    		type[0] = gbfieldtype;
+    		type[1] = Type.INT_TYPE;
+    		TupleDesc desc = new TupleDesc(type);
+    		
+    		for(String k:aggregator.keySet()){
+    			Tuple tup = new Tuple(desc);
+    			
+    			Field gbValue = null;
+        		if(Type.INT_TYPE.equals(gbfieldtype)){
+        			gbValue = new IntField(Integer.parseInt(k));
+        		}else{
+        			gbValue = new StringField(k, Type.STRING_TYPE.getLen());
+        		}
+    			
+        		int value = aggregator.get(k);
+        		IntField intfield = new IntField(value);
+        		tup.setField(0, gbValue);
+        		tup.setField(1, intfield);
+        		
+        		list.add(tup);
+    		}
+    		
+    		return new TupleIterator(desc,list);
+    	}
     }
 
 }

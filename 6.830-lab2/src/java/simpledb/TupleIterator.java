@@ -42,7 +42,10 @@ public class TupleIterator implements DbIterator {
     }
 
     public Tuple next() {
-        return i.next();
+    	if(i.hasNext()){
+    		return i.next();
+    	}
+        return null;
     }
 
     public void rewind() {

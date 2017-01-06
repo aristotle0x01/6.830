@@ -8,6 +8,8 @@ import java.util.*;
  * by a single column.
  */
 public class Aggregate extends Operator {
+	private DbIterator it;
+	private final Aggregator aggregator;
 
     /**
      * Constructor.  
@@ -23,6 +25,34 @@ public class Aggregate extends Operator {
      */
     public Aggregate(DbIterator child, int afield, int gfield, Aggregator.Op aop) {
         // some code goes here
+    	TupleDesc td = child.getTupleDesc();
+    	Type type = td.getFieldType(afield);
+    	Type gbType = null;
+    	if(gfield != -1){
+    		gbType = td.getFieldType(gfield);
+    	}
+    	if(type.equals(type.INT_TYPE)){
+    		aggregator = new IntegerAggregator(gfield,gbType,afield,aop);
+    	}else{
+    		aggregator = new StringAggregator(gfield,gbType,afield,aop);
+    	}
+    	
+    	try {
+    		child.rewind();
+			while(child.hasNext()){
+				aggregator.mergeTupleIntoGroup(child.next());
+			}
+			it = aggregator.iterator();
+		} catch (NoSuchElementException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (DbException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (TransactionAbortedException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
     }
 
     public static String nameOfAggregatorOp(Aggregator.Op aop) {
@@ -44,6 +74,7 @@ public class Aggregate extends Operator {
     public void open()
         throws NoSuchElementException, DbException, TransactionAbortedException {
         // some code goes here
+    	it.open();
     }
 
     /**
@@ -56,11 +87,12 @@ public class Aggregate extends Operator {
      */
     protected Tuple fetchNext() throws TransactionAbortedException, DbException {
         // some code goes here
-        return null;
+        return it.next();
     }
 
     public void rewind() throws DbException, TransactionAbortedException {
         // some code goes here
+    	it.rewind();
     }
 
     /**
@@ -76,10 +108,11 @@ public class Aggregate extends Operator {
      */
     public TupleDesc getTupleDesc() {
         // some code goes here
-        return null;
+        return it.getTupleDesc();
     }
 
     public void close() {
         // some code goes here
+    	it.close();
     }
 }
