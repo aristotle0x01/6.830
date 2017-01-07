@@ -21,6 +21,9 @@ public class HeapPage implements Page {
 
     byte[] oldData;
     private final Byte oldDataLock=new Byte((byte)0);
+    
+    private boolean dirty=false;
+    private TransactionId tid=null;
 
     /**
      * Create a HeapPage from a set of bytes of data read from disk.
@@ -244,6 +247,16 @@ public class HeapPage implements Page {
     public void deleteTuple(Tuple t) throws DbException {
         // some code goes here
         // not necessary for lab1
+    	for(int i=0;i<numSlots;i++){
+    		Tuple it = tuples[i];
+    		if(isSlotUsed(i) && it.getRecordId() != null && it.getRecordId().equals(t.getRecordId())){
+    			markSlotUsed(i,false);
+    			t.setRecordId(null);
+    			return;
+    		}
+    	}
+    	
+    	throw new DbException("deleteTuple " + t);
     }
 
     /**
@@ -256,6 +269,25 @@ public class HeapPage implements Page {
     public void insertTuple(Tuple t) throws DbException {
         // some code goes here
         // not necessary for lab1
+    	if(getNumEmptySlots() == 0){
+    		throw new DbException("this page is full");
+    	}
+    	
+    	if(!td.equals(t.getTupleDesc())){
+    		throw new DbException("tupledesc mismatch");
+    	}
+    	
+    	for(int i=0;i<numSlots;i++){
+    		if(!isSlotUsed(i)){
+    			tuples[i] = t;
+    			markSlotUsed(i,true);
+    			RecordId rid = new RecordId(pid,i);
+    			t.setRecordId(rid);
+    			return;
+    		}
+    	}
+    	
+    	throw new DbException("insertTuple " + t);
     }
 
     /**
@@ -265,6 +297,8 @@ public class HeapPage implements Page {
     public void markDirty(boolean dirty, TransactionId tid) {
         // some code goes here
 	// not necessary for lab1
+    	this.dirty = dirty;
+    	this.tid = tid;
     }
 
     /**
@@ -273,6 +307,9 @@ public class HeapPage implements Page {
     public TransactionId isDirty() {
         // some code goes here
 	// Not necessary for lab1
+    	if(dirty){
+    		return tid;
+    	}
         return null;      
     }
 
@@ -310,6 +347,24 @@ public class HeapPage implements Page {
     private void markSlotUsed(int i, boolean value) {
         // some code goes here
         // not necessary for lab1
+    	if(i < 0 || i >= numSlots){
+    		throw new IndexOutOfBoundsException(String.format("%d is out of bound with %d slots", i,numSlots));
+    	}
+    	
+    	int quot = i / 8;
+    	int remainder = i % 8;
+    	
+    	int oldByte = header[quot];
+    	int markBitByte = (1 << remainder) & 0x00ff;
+    	int newByte = 0;
+    	if(value){
+    		newByte = oldByte | markBitByte;
+    	}else{
+    		markBitByte = markBitByte ^ 0x00ff;
+    		newByte = oldByte & markBitByte;
+    	}
+    	
+    	header[quot] = (byte)newByte;
     }
 
     /**
