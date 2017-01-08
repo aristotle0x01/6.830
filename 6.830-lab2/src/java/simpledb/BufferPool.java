@@ -1,6 +1,7 @@
 package simpledb;
 
 import java.io.*;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -63,6 +64,9 @@ public class BufferPool {
     	if(!pageStore.containsKey(pid.hashCode())){
     		DbFile dbfile = Database.getCatalog().getDatabaseFile(pid.getTableId());
     		Page page = dbfile.readPage(pid);
+    		if(pageStore.size() > numPages){
+    			evictPage();
+    		}
     		pageStore.put(pid.hashCode(), page);
     	}
     	return pageStore.get(pid.hashCode());
@@ -168,7 +172,12 @@ public class BufferPool {
     public synchronized void flushAllPages() throws IOException {
         // some code goes here
         // not necessary for lab1
-
+    	Iterator<Integer> it = pageStore.keySet().iterator();
+    	while(it.hasNext()){
+    		int pid = it.next();
+    		Page page = pageStore.get(pid);
+    		flushPage(page.getId());
+    	}
     }
 
     /** Remove the specific page id from the buffer pool.
@@ -188,6 +197,16 @@ public class BufferPool {
     private synchronized  void flushPage(PageId pid) throws IOException {
         // some code goes here
         // not necessary for lab1
+    	if(pageStore.containsKey(pid.hashCode())){
+    		Page page = pageStore.get(pid.hashCode());
+    		TransactionId tid = page.isDirty();
+    		if(tid != null){
+    			DbFile dbfile = Database.getCatalog().getDatabaseFile(pid.getTableId());
+    			dbfile.writePage(page);
+    			page.markDirty(false, tid);
+    			pageStore.put(pid.hashCode(),page);
+    		}
+    	}
     }
 
     /** Write all pages of the specified transaction to disk.
@@ -204,6 +223,19 @@ public class BufferPool {
     private synchronized  void evictPage() throws DbException {
         // some code goes here
         // not necessary for lab1
+    	Iterator<Integer> it = pageStore.keySet().iterator();
+    	if(it.hasNext()){
+    		int pid = it.next();
+    		Page page = pageStore.get(pid);
+    		try {
+				flushPage(page.getId());
+				pageStore.remove(pid);
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+				throw new DbException("evictPage failed " + e.toString());
+			}
+    	}
     }
 
 }
