@@ -1,11 +1,15 @@
 package simpledb;
-import java.util.*;
+import java.io.IOException;
 
 /**
  * Inserts tuples read from the child operator into
  * the tableid specified in the constructor
  */
 public class Insert extends Operator {
+	private final TransactionId t;
+	private final DbIterator child;
+	private final int tableid;
+	private boolean called = false;
 
     /**
      * Constructor.
@@ -17,23 +21,33 @@ public class Insert extends Operator {
     public Insert(TransactionId t, DbIterator child, int tableid)
         throws DbException {
         // some code goes here
+    	this.t = t;
+    	this.child = child;
+    	this.tableid = tableid;
     }
 
     public TupleDesc getTupleDesc() {
         // some code goes here
-        return null;
+    	Type[] type = new Type[1];
+		type[0] = Type.INT_TYPE;
+		TupleDesc desc = new TupleDesc(type);
+        return desc;
     }
 
     public void open() throws DbException, TransactionAbortedException {
         // some code goes here
+    	child.open();
     }
 
     public void close() {
         // some code goes here
+    	child.close();
     }
 
     public void rewind() throws DbException, TransactionAbortedException {
         // some code goes here
+    	close();
+    	open();
     }
 
     /**
@@ -46,12 +60,37 @@ public class Insert extends Operator {
      *
      * @return A 1-field tuple containing the number of inserted records, or
     * null if called more than once.
+     * @throws  
      * @see Database#getBufferPool
      * @see BufferPool#insertTuple
      */
     protected Tuple fetchNext()
             throws TransactionAbortedException, DbException {
         // some code goes here
-        return null;
+    	if(called){
+    		return null;
+    	}
+    	called = true;
+    	
+    	int count = 0;
+    	
+    	while(child.hasNext()){
+    		try {
+				Database.getBufferPool().insertTuple(t, tableid, child.next());
+				count++;
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+    	}
+    	
+    	Type[] type = new Type[1];
+		type[0] = Type.INT_TYPE;
+		TupleDesc desc = new TupleDesc(type);
+		Tuple tup = new Tuple(desc);
+		IntField intfield = new IntField(count);
+		tup.setField(0, intfield);
+		
+		return tup;
     }
 }
