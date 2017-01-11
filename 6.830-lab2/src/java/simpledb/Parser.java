@@ -515,6 +515,10 @@ public class Parser {
             StringBuilder buffer = new StringBuilder();
             String line;
             while ((line = reader.readLine("SimpleDB> ")) != null) {
+            	if(line.equals("q") || line.equals("quit") || line.equals("exit")){
+            		break;
+            	}
+            	
                 // Split statements at ';': handles multiple statements on one line, or one
                 // statement spread across many lines
                 while (line.indexOf(';') >= 0) {
