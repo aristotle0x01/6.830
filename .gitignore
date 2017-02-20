@@ -15,3 +15,7 @@ hs_err_pid*
 .project
 .settings/
 log
+
+6.830-lab2/catalog.txt
+6.830-lab2/data.dat
+6.830-lab2/data.txt
