@@ -4,8 +4,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * 
@@ -47,7 +45,7 @@ public class LockManager {
 	}
 	
 	public void lock(TransactionId tid, PageId p, Permissions perm){
-		while(!lock2(tid,p,perm)){
+		while(!doLock(tid,p,perm)){
 			try {
 				Thread.sleep(100);
 			} catch (InterruptedException e) {
@@ -55,7 +53,7 @@ public class LockManager {
 		}
 	}
 	
-	private synchronized boolean lock2(TransactionId tid, PageId p, Permissions perm){
+	private synchronized boolean doLock(TransactionId tid, PageId p, Permissions perm){
 		if(perm.equals(Permissions.READ_ONLY)){
 			if(x_pages.containsKey(p)){
 				// txs²»»áÎª¿Õ
@@ -70,28 +68,19 @@ public class LockManager {
 			}else{
 				if(s_pages.containsKey(p)){
 					s_pages.get(p).add(tid);
-					
-					if(txLocks_s.containsKey(tid)){
-						txLocks_s.get(tid).add(p);
-					}else{
-						Set<PageId> pSet = new HashSet<>();
-						pSet.add(p);
-						
-						txLocks_s.put(tid, pSet);
-					}
 				}else{
 					Set<TransactionId> nset = new HashSet<>();
 					nset.add(tid);
 					s_pages.put(p, nset);
+				}
+				
+				if(txLocks_s.containsKey(tid)){
+					txLocks_s.get(tid).add(p);
+				}else{
+					Set<PageId> pSet = new HashSet<>();
+					pSet.add(p);
 					
-					if(txLocks_s.containsKey(tid)){
-						txLocks_s.get(tid).add(p);
-					}else{
-						Set<PageId> pSet = new HashSet<>();
-						pSet.add(p);
-						
-						txLocks_s.put(tid, pSet);
-					}
+					txLocks_s.put(tid, pSet);
 				}
 				
 				return true;
@@ -224,15 +213,7 @@ public class LockManager {
 			txLocks_x.remove(tid);
 		}
 	}
-	
-	// encapsulate all transactions that lock a certain page
-	private static class Item{
-		// read/write lock for a certain page
-		private final ReadWriteLock lock = new ReentrantReadWriteLock();
-		
-		// transaction id hashcode -> permission
-		private final Map<Integer,Permissions> trans = new HashMap<>();
-	}
+
 }
 
 
