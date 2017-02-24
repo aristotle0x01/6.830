@@ -3,6 +3,7 @@ package simpledb;
 import java.io.*;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -63,6 +64,9 @@ public class BufferPool {
      */
     public  Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
+    	// must lock before usage
+    	lockManager.lock(tid, pid, perm);
+    	
         // some code goes here
     	if(!pageStore.containsKey(pid.hashCode())){
     		DbFile dbfile = Database.getCatalog().getDatabaseFile(pid.getTableId());
@@ -72,9 +76,6 @@ public class BufferPool {
     		}
     		pageStore.put(pid.hashCode(), page);
     	}
-    	
-    	// must lock before usage
-    	lockManager.lock(tid, pid, perm);
     	
     	return pageStore.get(pid.hashCode());
     }
@@ -103,7 +104,7 @@ public class BufferPool {
     public void transactionComplete(TransactionId tid) throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
-    	lockManager.unlock(tid);
+    	transactionComplete(tid,true);
     }
 
     /** Return true if the specified transaction has a lock on the specified page */
@@ -124,7 +125,27 @@ public class BufferPool {
         throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
-    	transactionComplete(tid);
+    	if(commit){
+    		// flush all pages dirtied by this transaction
+    		flushPages(tid);
+    	}else{
+    		// restore all pages dirtied by this transaction
+    		Set<PageId> pids = lockManager.getDirtyPageIds(tid);
+        	for(PageId pid: pids){
+        		pageStore.remove(pid.hashCode());
+        		try {
+					getPage(tid,pid, Permissions.READ_ONLY);
+				} catch (TransactionAbortedException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				} catch (DbException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+        	}
+    	}
+    	
+    	lockManager.unlock(tid);
     }
 
     /**
@@ -225,6 +246,10 @@ public class BufferPool {
     public synchronized  void flushPages(TransactionId tid) throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
+    	Set<PageId> pids = lockManager.getDirtyPageIds(tid);
+    	for(PageId pid: pids){
+    		flushPage(pid);
+    	}
     }
 
     /**

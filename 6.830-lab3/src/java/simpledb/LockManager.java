@@ -243,6 +243,18 @@ public class LockManager {
 			x_pages.remove(pid);
 		}
 	}
+
+	/**
+	 * return all pages x_locked by a certain transaction, used 
+	 * in commit or abort
+	 */ 
+	public synchronized Set<PageId> getDirtyPageIds(TransactionId id){
+		if(txLocks_x.containsKey(id)){
+			return txLocks_x.get(id);
+		}
+		
+		return new HashSet<PageId>();
+	}
 }
 
 
