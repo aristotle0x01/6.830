@@ -235,18 +235,27 @@ public class BufferPool {
         // some code goes here
         // not necessary for lab1
     	Iterator<Integer> it = pageStore.keySet().iterator();
-    	if(it.hasNext()){
+    	while(it.hasNext()){
     		int pid = it.next();
     		Page page = pageStore.get(pid);
-    		try {
-				flushPage(page.getId());
-				pageStore.remove(pid);
-			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-				throw new DbException("evictPage failed " + e.toString());
-			}
+    		if(page.isDirty() == null){
+    			try {
+    				flushPage(page.getId());
+    				pageStore.remove(pid);
+    				
+    				// unlock all the locks this page hold
+    				lockManager.unlock(page.getId());
+    			} catch (IOException e) {
+    				// TODO Auto-generated catch block
+    				e.printStackTrace();
+    				throw new DbException("evictPage failed " + e.toString());
+    			}
+    			
+    			return;
+    		}
     	}
+    	
+    	throw new DbException("evict page failed without a clean page!");
     }
 
 }

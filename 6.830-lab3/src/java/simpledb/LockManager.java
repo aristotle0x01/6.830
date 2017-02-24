@@ -213,7 +213,36 @@ public class LockManager {
 			txLocks_x.remove(tid);
 		}
 	}
-
+	
+	public synchronized void unlock(PageId pid){
+		if(s_pages.containsKey(pid)){
+			Set<TransactionId> tids = s_pages.get(pid);
+			for(TransactionId tid: tids){
+				if(txLocks_s.containsKey(tid)){
+					txLocks_s.get(tid).remove(pid);
+					if(txLocks_s.get(tid).isEmpty()){
+						txLocks_s.remove(tid);
+					}
+				}
+			}
+			
+			s_pages.remove(pid);
+		}
+		
+		if(x_pages.containsKey(pid)){
+			Set<TransactionId> tids = x_pages.get(pid);
+			for(TransactionId tid: tids){
+				if(txLocks_x.containsKey(tid)){
+					txLocks_x.get(tid).remove(pid);
+					if(txLocks_x.get(tid).isEmpty()){
+						txLocks_x.remove(tid);
+					}
+				}
+			}
+			
+			x_pages.remove(pid);
+		}
+	}
 }
 
 
