@@ -1,7 +1,7 @@
 package simpledb;
 
-import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -14,148 +14,214 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * 
  */
 public class LockManager {
+	// pages s_locked by a transaction
+	private final Map<TransactionId,Set<PageId>> txLocks_s;
 	
-	// pageid.hashcode -> Item
-	private final HashMap<Integer,Item> manager;
+	// pages x_locked by a transaction
+	private final Map<TransactionId,Set<PageId>> txLocks_x;
+	
+	// pages hold shared lock
+	private final Map<PageId,Set<TransactionId>> s_pages;
+	
+	// pages hold exclusive lock
+	private final Map<PageId,Set<TransactionId>> x_pages;
+	
 	
 	public LockManager(){
-		manager = new HashMap<>();
+		txLocks_s = new HashMap<>();
+		txLocks_x = new HashMap<>();
+		s_pages = new HashMap<>();
+		x_pages = new HashMap<>();
 	}
 	
 	public synchronized boolean holdsLock(TransactionId tid, PageId p){
-		if(!manager.containsKey(p.hashCode())){
-			return false;
+		if(s_pages.containsKey(p) && s_pages.get(p).contains(tid)){
+			return true;
 		}
 		
-		Item item = manager.get(p.hashCode());
-		return item.trans.containsKey(tid.hashCode());
+		if(x_pages.containsKey(p) && x_pages.get(p).contains(tid)){
+			return true;
+		}
+		
+		return false;
 	}
 	
-	private void doLock(Item locks, Permissions perm){
+	public void lock(TransactionId tid, PageId p, Permissions perm){
+		while(!lock2(tid,p,perm)){
+			try {
+				Thread.sleep(100);
+			} catch (InterruptedException e) {
+			}
+		}
+	}
+	
+	private synchronized boolean lock2(TransactionId tid, PageId p, Permissions perm){
 		if(perm.equals(Permissions.READ_ONLY)){
-			locks.lock.readLock().lock();
-		}else{
-			locks.lock.writeLock().lock();
-		}
-	}
-	
-	public synchronized void lock(TransactionId tid, PageId p, Permissions perm){
-		Integer phash = p.hashCode();
-		Integer thash = tid.hashCode();
-		
-		System.out.println("1 " + thash +" "+phash + " " + perm.permLevel);
-		
-		// 页面尚未被锁定
-		if(!manager.containsKey(phash)){
-			Item locks  = new Item();
-			doLock(locks, perm);
-			locks.trans.put(thash, perm);
-			manager.put(phash,locks);
-			return;
-		}
-		
-		Item locks = manager.get(phash);
-		if(locks.trans.isEmpty()){
-			doLock(locks, perm);
-			locks.trans.put(thash, perm);
-		}else{
-			if(locks.trans.containsKey(thash)){
-				Permissions temp = locks.trans.get(thash);
-				if(temp.equals(Permissions.READ_ONLY)){
-					if(locks.trans.size() ==  1){
-						if(perm.equals(Permissions.READ_WRITE)){
-							// 释放既有读锁，再加写锁
-							System.out.println("2 " + thash +" "+phash + " " + perm.permLevel);
-							locks.lock.readLock().unlock();
-							doLock(locks, perm);
-						}
-						locks.trans.put(thash, perm);
-					}else{
-						if(perm.equals(Permissions.READ_ONLY)){
-							// 已有读锁，do nothing
-						}else{
-							System.out.println("3 " + thash +" "+phash + " " + perm.permLevel);
-							// 释放既有读锁，再加写锁
-							locks.lock.readLock().unlock();
-							doLock(locks, perm);
-							locks.trans.put(thash, perm);
-						}
-					}
+			if(x_pages.containsKey(p)){
+				// txs不会为空
+				Set<TransactionId> txs = x_pages.get(p);
+				if(txs.contains(tid)){
+					//已有write lock
+					return true;
 				}else{
-					// can READ_WRITE already
-					return;
+					// block, wait to get read lock
+					return false;
 				}
 			}else{
-				if(perm.equals(Permissions.READ_WRITE)){
-					// block
-					doLock(locks, perm);
-					locks.trans.put(thash, perm);
-				}else{
-					if(locks.trans.size() > 1){
-						doLock(locks, perm);
-						locks.trans.put(thash, perm);
+				if(s_pages.containsKey(p)){
+					s_pages.get(p).add(tid);
+					
+					if(txLocks_s.containsKey(tid)){
+						txLocks_s.get(tid).add(p);
 					}else{
-						// actually just one element
-						Collection<Permissions> clist = locks.trans.values();
-						for(Permissions c: clist){
-							if(c.equals(Permissions.READ_WRITE)){
-								// block
-								doLock(locks, perm);
-								locks.trans.put(thash, perm);
+						Set<PageId> pSet = new HashSet<>();
+						pSet.add(p);
+						
+						txLocks_s.put(tid, pSet);
+					}
+				}else{
+					Set<TransactionId> nset = new HashSet<>();
+					nset.add(tid);
+					s_pages.put(p, nset);
+					
+					if(txLocks_s.containsKey(tid)){
+						txLocks_s.get(tid).add(p);
+					}else{
+						Set<PageId> pSet = new HashSet<>();
+						pSet.add(p);
+						
+						txLocks_s.put(tid, pSet);
+					}
+				}
+				
+				return true;
+			}
+		}else{
+			if(x_pages.containsKey(p)){
+				// txs不会为空
+				Set<TransactionId> txs = x_pages.get(p);
+				if(txs.contains(tid)){
+					//已有write lock
+					return true;
+				}else{
+					// block, wait to get write lock
+					return false;
+				}
+			}else{
+				if(s_pages.containsKey(p)){
+					Set<TransactionId> tSet = s_pages.get(p);
+					if(tSet.contains(tid)){
+						if(tSet.size() == 1){
+							// grant write lock
+							Set<TransactionId> nset = new HashSet<>();
+							nset.add(tid);
+							x_pages.put(p, nset);
+							
+							if(txLocks_x.containsKey(tid)){
+								txLocks_x.get(tid).add(p);
 							}else{
-								doLock(locks, perm);
-								locks.trans.put(thash, perm);
+								Set<PageId> pSet = new HashSet<>();
+								pSet.add(p);
+								txLocks_x.put(tid, pSet);
 							}
+							
+							// release read lock
+							s_pages.get(p).remove(tid);
+							if(s_pages.get(p).isEmpty()){
+								s_pages.remove(p);
+							}
+							
+							txLocks_s.get(tid).remove(p);
+							if(txLocks_s.get(tid).isEmpty()){
+								txLocks_s.remove(tid);
+							}
+							
+							return true;
+						}else{
+							// block
+							return false;
 						}
+					}else{
+						// block
+						return false;
 					}
+				}else{
+					Set<TransactionId> nset = new HashSet<>();
+					nset.add(tid);
+					x_pages.put(p, nset);
+					
+					if(txLocks_x.containsKey(tid)){
+						txLocks_x.get(tid).add(p);
+					}else{
+						Set<PageId> pSet = new HashSet<>();
+						pSet.add(p);
+						txLocks_x.put(tid, pSet);
+					}
+					
+					return true;
 				}
 			}
 		}
 	}
 	
+	// unlock page p by transaction tid
 	public synchronized void unlock(TransactionId tid, PageId p){
-		Integer pageid = p.hashCode();
-		if(!manager.containsKey(pageid)){
-			return;
+		if(txLocks_s.containsKey(tid)){
+			txLocks_s.get(tid).remove(p);
+			if(txLocks_s.get(tid).isEmpty()){
+				txLocks_s.remove(tid);
+			}
 		}
 		
-		Item locks = manager.get(pageid);
-		if(locks.trans.containsKey(tid.hashCode())){
-			Permissions perm = locks.trans.get(tid.hashCode());
-			if(perm.equals(Permissions.READ_ONLY)){
-				locks.lock.readLock().unlock();
-			}else{
-				locks.lock.writeLock().unlock();
+		if(txLocks_x.containsKey(tid)){
+			txLocks_x.get(tid).remove(p);
+			if(txLocks_x.get(tid).isEmpty()){
+				txLocks_x.remove(tid);
 			}
-			locks.trans.remove(tid.hashCode());
-			
-			if(locks.trans.isEmpty()){
-				// current page no longer holds a lock, just delete it
-				manager.remove(pageid);
+		}
+		
+		if(s_pages.containsKey(p)){
+			s_pages.get(p).remove(tid);
+			if(s_pages.get(p).isEmpty()){
+				s_pages.remove(p);
+			}
+		}
+		
+		if(x_pages.containsKey(p)){
+			x_pages.get(p).remove(tid);
+			if(x_pages.get(p).isEmpty()){
+				x_pages.remove(p);
 			}
 		}
 	}
 
 	public synchronized void unlock(TransactionId tid){
-		Set<Integer> pages = manager.keySet();
-		Integer thash = tid.hashCode();
-		
-		for(Integer pid:pages){
-			Item locks = manager.get(pid);
-			if(locks.trans.containsKey(thash)){
-				Permissions perm = locks.trans.get(thash);
-				if(perm.equals(Permissions.READ_ONLY)){
-					locks.lock.readLock().unlock();
-				}else{
-					locks.lock.writeLock().unlock();
-				}
-				locks.trans.remove(thash);
-				
-				if(locks.trans.isEmpty()){
-					// current page no longer holds a lock, just delete it
-					manager.remove(pid);
+		if(txLocks_s.containsKey(tid)){
+			Set<PageId> sSet = txLocks_s.get(tid);
+			for(PageId id: sSet){
+				if(s_pages.containsKey(id)){
+					s_pages.get(id).remove(tid);
+					if(s_pages.get(id).isEmpty()){
+						s_pages.remove(id);
+					}
 				}
 			}
+			
+			txLocks_s.remove(tid);
+		}
+		
+		if(txLocks_x.containsKey(tid)){
+			Set<PageId> tSet = txLocks_x.get(tid);
+			for(PageId id: tSet){
+				if(x_pages.containsKey(id)){
+					x_pages.get(id).remove(tid);
+					if(x_pages.get(id).isEmpty()){
+						x_pages.remove(id);
+					}
+				}
+			}
+			
+			txLocks_x.remove(tid);
 		}
 	}
 	
