@@ -71,7 +71,7 @@ public class BufferPool {
     	if(!pageStore.containsKey(pid.hashCode())){
     		DbFile dbfile = Database.getCatalog().getDatabaseFile(pid.getTableId());
     		Page page = dbfile.readPage(pid);
-    		if(pageStore.size() > numPages){
+    		if(pageStore.size() >= numPages){
     			evictPage();
     		}
     		pageStore.put(pid.hashCode(), page);

@@ -44,11 +44,17 @@ public class LockManager {
 		return false;
 	}
 	
-	public void lock(TransactionId tid, PageId p, Permissions perm){
+	public void lock(TransactionId tid, PageId p, Permissions perm) throws TransactionAbortedException{
+		long start = System.currentTimeMillis();
+		
 		while(!doLock(tid,p,perm)){
 			try {
-				Thread.sleep(100);
+				Thread.sleep(20);
 			} catch (InterruptedException e) {
+			}
+			
+			if((System.currentTimeMillis() - start) > 250){
+				throw new TransactionAbortedException();
 			}
 		}
 	}
