@@ -27,6 +27,8 @@ public class BufferPool {
     
     private final int numPages;
     private final ConcurrentHashMap<Integer,Page> pageStore;
+    
+    private final LockManager lockManager;
 
     /**
      * Creates a BufferPool that caches up to numPages pages.
@@ -37,6 +39,7 @@ public class BufferPool {
         // some code goes here
     	this.numPages = numPages;
     	pageStore = new ConcurrentHashMap<Integer,Page>();
+    	lockManager = new LockManager();
     }
     
     public static int getPageSize() {
@@ -69,6 +72,10 @@ public class BufferPool {
     		}
     		pageStore.put(pid.hashCode(), page);
     	}
+    	
+    	// must lock before usage
+    	lockManager.lock(tid, pid, perm);
+    	
     	return pageStore.get(pid.hashCode());
     }
 
@@ -84,6 +91,8 @@ public class BufferPool {
     public  void releasePage(TransactionId tid, PageId pid) {
         // some code goes here
         // not necessary for lab1|lab2
+    	// must lock before usage
+    	lockManager.unlock(tid, pid);
     }
 
     /**
@@ -94,13 +103,14 @@ public class BufferPool {
     public void transactionComplete(TransactionId tid) throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
+    	lockManager.unlock(tid);
     }
 
     /** Return true if the specified transaction has a lock on the specified page */
     public boolean holdsLock(TransactionId tid, PageId p) {
         // some code goes here
         // not necessary for lab1|lab2
-        return false;
+        return lockManager.holdsLock(tid, p);
     }
 
     /**
@@ -114,6 +124,7 @@ public class BufferPool {
         throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
+    	transactionComplete(tid);
     }
 
     /**
