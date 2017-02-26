@@ -233,6 +233,9 @@ public class BufferPool {
     		Page page = pageStore.get(pid.hashCode());
     		TransactionId tid = page.isDirty();
     		if(tid != null){
+    			Database.getLogFile().logWrite(tid, page.getBeforeImage(), page);
+    	        Database.getLogFile().force();
+    	        
     			DbFile dbfile = Database.getCatalog().getDatabaseFile(pid.getTableId());
     			dbfile.writePage(page);
     			page.markDirty(false, tid);
@@ -249,6 +252,9 @@ public class BufferPool {
     	Set<PageId> pids = lockManager.getDirtyPageIds(tid);
     	for(PageId pid: pids){
     		flushPage(pid);
+    		
+    		Page page = pageStore.get(pid.hashCode());
+    		page.setBeforeImage();
     	}
     }
 
