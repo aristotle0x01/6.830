@@ -3,6 +3,7 @@ package simpledb;
 
 import java.io.*;
 import java.util.*;
+import java.util.Map.Entry;
 import java.lang.reflect.*;
 
 /**
@@ -157,6 +158,7 @@ public class LogFile {
                 // must do this here, since rollback only works for
                 // live transactions (needs tidToFirstLogRecord)
                 rollback(tid);
+                //raf.seek(raf.length());
 
                 raf.writeInt(ABORT_RECORD);
                 raf.writeLong(tid.getId());
@@ -467,6 +469,47 @@ public class LogFile {
             synchronized(this) {
                 preAppend();
                 // some code goes here
+                
+                // seek to tid begin
+                long start = tidToFirstLogRecord.get(tid.getId());
+                raf.seek(start);
+                
+                while (true) {
+                    try {
+                        int type = raf.readInt();
+                        long record_tid = raf.readLong();
+
+                        switch (type) {
+                        case ABORT_RECORD:
+                            break;
+                        case COMMIT_RECORD:
+                            break;
+                        case UPDATE_RECORD:
+                            Page before = readPageData(raf);
+                            Page after = readPageData(raf);
+                            if(record_tid == tid.getId()){
+                            	Database.getBufferPool().discardPage(before.getId());
+                            	DbFile df = Database.getCatalog().getDatabaseFile(before.getId().getTableId());
+                            	df.writePage(before);
+                            }
+                            break;
+                        case BEGIN_RECORD:
+                            break;
+                        case CHECKPOINT_RECORD:
+                            int numXactions = raf.readInt();
+                            while (numXactions-- > 0) {
+                                long xid = raf.readLong();
+                                long xoffset = raf.readLong();
+                            }
+                            break;
+                        }
+
+                        //all xactions finish with a pointer
+                        raf.readLong();
+                    } catch (EOFException e) {
+                        break;
+                    }
+                }
             }
         }
     }
@@ -494,6 +537,231 @@ public class LogFile {
             synchronized (this) {
                 recoveryUndecided = false;
                 // some code goes here
+                
+                // 确定last checkpoint offset，不存在则从头开始
+                raf.seek(0);
+                long cpOffset = raf.readLong();
+                HashMap<Long,Long> r_tidToFirstLogRecord = new HashMap<Long,Long>();
+                if(NO_CHECKPOINT_ID != cpOffset){
+                	raf.seek(cpOffset);
+                	
+                	int type = raf.readInt();
+                    long record_tid = raf.readLong();
+                    
+                	int numXactions = raf.readInt();
+                    while (numXactions-- > 0) {
+                        long xid = raf.readLong();
+                        long xoffset = raf.readLong();
+                        
+                        r_tidToFirstLogRecord.put(xid, xoffset);
+                    }
+                    
+                    raf.readLong();
+                }
+                
+                // 没有checkpoint则从头开始，有则从checkpoint下一个record开始
+                // 若有checkpoint则后面也有可能开启新的transaction
+                while (true) {
+                    try {
+                    	long offset = raf.getFilePointer();
+                    	
+                        int type = raf.readInt();
+                        long record_tid = raf.readLong();
+
+                        switch (type) {
+                        case ABORT_RECORD:
+                            break;
+                        case COMMIT_RECORD:
+                            break;
+                        case UPDATE_RECORD:
+                            Page before = readPageData(raf);
+                            Page after = readPageData(raf);
+                            break;
+                        case BEGIN_RECORD:
+                        	if(!r_tidToFirstLogRecord.containsKey(record_tid)){
+                        		r_tidToFirstLogRecord.put(record_tid, offset);
+                        	}
+                            break;
+                        case CHECKPOINT_RECORD:
+                            int nXactions = raf.readInt();
+                            while (nXactions-- > 0) {
+                                long xid = raf.readLong();
+                                long xoffset = raf.readLong();
+                            }
+                            break;
+                        }
+
+                        //all xactions finish with a pointer
+                        raf.readLong();
+                    } catch (EOFException e) {
+                        break;
+                    }
+                }
+                
+                // 确认r_tidToFirstLogRecord每个tid是commit还是abort或者未完成
+                HashMap<Long,Integer> r_tidToCommited = new HashMap<Long,Integer>();
+                Iterator<Entry<Long,Long>> it = r_tidToFirstLogRecord.entrySet().iterator();
+                while(it.hasNext()){
+                	Entry<Long,Long> en = it.next();
+                	
+                	// 默认为未完成，只有找到commit,abort才更新
+                	r_tidToCommited.put(en.getKey(), 0);
+                	
+                	raf.seek(en.getValue());
+                	
+                    while (true) {
+                        try {
+                            int type = raf.readInt();
+                            long record_tid = raf.readLong();
+
+                            switch (type) {
+                            case ABORT_RECORD:
+                            	if(record_tid == en.getKey()){
+                            		r_tidToCommited.put(en.getKey(), ABORT_RECORD);
+                            	}
+                                break;
+                            case COMMIT_RECORD:
+                            	if(record_tid == en.getKey()){
+                            		r_tidToCommited.put(en.getKey(), COMMIT_RECORD);
+                            	}
+                                break;
+                            case UPDATE_RECORD:
+                                Page before = readPageData(raf);
+                                Page after = readPageData(raf);
+                                break;
+                            case BEGIN_RECORD:
+                                break;
+                            case CHECKPOINT_RECORD:
+                                int nXactions = raf.readInt();
+                                while (nXactions-- > 0) {
+                                    long xid = raf.readLong();
+                                    long xoffset = raf.readLong();
+                                }
+                                break;
+                            }
+
+                            //all xactions finish with a pointer
+                            raf.readLong();
+                        } catch (EOFException e) {
+                            break;
+                        }
+                    }
+                }
+                
+               // redo
+                Iterator<Entry<Long,Integer>> committed = r_tidToCommited.entrySet().iterator(); 
+                while(committed.hasNext()){
+                	Entry<Long,Integer> en = committed.next();
+                	if(en.getValue() != COMMIT_RECORD){
+                		continue;
+                	}
+                	
+                	raf.seek(r_tidToFirstLogRecord.get(en.getKey()));
+                	
+                    while (true) {
+                        try {
+                            int type = raf.readInt();
+                            long record_tid = raf.readLong();
+
+                            switch (type) {
+                            case ABORT_RECORD:
+                                break;
+                            case COMMIT_RECORD:
+                                break;
+                            case UPDATE_RECORD:
+                            	Page before = readPageData(raf);
+                                Page after = readPageData(raf);
+                                if(record_tid == en.getKey()){
+                                	// before and after of the same page id, so just discard either one
+                                	Database.getBufferPool().discardPage(before.getId());
+                                	DbFile df = Database.getCatalog().getDatabaseFile(before.getId().getTableId());
+                                	df.writePage(after);
+                                }
+                                break;
+                            case BEGIN_RECORD:
+                                break;
+                            case CHECKPOINT_RECORD:
+                                int nXactions = raf.readInt();
+                                while (nXactions-- > 0) {
+                                    long xid = raf.readLong();
+                                    long xoffset = raf.readLong();
+                                }
+                                break;
+                            }
+
+                            //all xactions finish with a pointer
+                            raf.readLong();
+                        } catch (EOFException e) {
+                            break;
+                        }
+                    }
+                }
+                
+               // undo
+                Iterator<Entry<Long,Integer>> un_committed = r_tidToCommited.entrySet().iterator(); 
+                while(un_committed.hasNext()){
+                	Entry<Long,Integer> en = un_committed.next();
+                	if(en.getValue() != 0){
+                		continue;
+                	}
+                	
+                	raf.seek(r_tidToFirstLogRecord.get(en.getKey()));
+                	
+                    while (true) {
+                        try {
+                            int type = raf.readInt();
+                            long record_tid = raf.readLong();
+
+                            switch (type) {
+                            case ABORT_RECORD:
+                                break;
+                            case COMMIT_RECORD:
+                                break;
+                            case UPDATE_RECORD:
+                            	Page before = readPageData(raf);
+                                Page after = readPageData(raf);
+                                if(record_tid == en.getKey()){
+                                	// before and after of the same page id, so just discard either one
+                                	Database.getBufferPool().discardPage(before.getId());
+                                	DbFile df = Database.getCatalog().getDatabaseFile(before.getId().getTableId());
+                                	df.writePage(before);
+                                }
+                                break;
+                            case BEGIN_RECORD:
+                                break;
+                            case CHECKPOINT_RECORD:
+                                int nXactions = raf.readInt();
+                                while (nXactions-- > 0) {
+                                    long xid = raf.readLong();
+                                    long xoffset = raf.readLong();
+                                }
+                                break;
+                            }
+
+                            //all xactions finish with a pointer
+                            raf.readLong();
+                        } catch (EOFException e) {
+                            break;
+                        }
+                    }
+                }
+                // 对于没有commit和abort的transaction，要写入abort记录
+                Iterator<Entry<Long,Integer>> un_finished = r_tidToCommited.entrySet().iterator();
+                while(un_finished.hasNext()){
+                	Entry<Long,Integer> en = un_finished.next();
+                	if(en.getValue() != 0){
+                		continue;
+                	}
+                	
+                	currentOffset = raf.length();
+                	raf.seek(currentOffset);
+                	
+                	raf.writeInt(ABORT_RECORD);
+                    raf.writeLong(en.getKey());
+                    raf.writeLong(currentOffset);
+                    currentOffset = raf.getFilePointer();
+                    force();
+                }
             }
          }
     }
