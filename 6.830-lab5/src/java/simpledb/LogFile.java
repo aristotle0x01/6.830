@@ -78,6 +78,8 @@ public class LogFile {
     RandomAccessFile raf;
     Boolean recoveryUndecided; // no call to recover() and no append to log
 
+    // will not appear in log, but a constant meaning a transaction not finished
+    static final int INCOMPLETE_RECORD = 0;
     static final int ABORT_RECORD = 1;
     static final int COMMIT_RECORD = 2;
     static final int UPDATE_RECORD = 3;
@@ -158,7 +160,6 @@ public class LogFile {
                 // must do this here, since rollback only works for
                 // live transactions (needs tidToFirstLogRecord)
                 rollback(tid);
-                //raf.seek(raf.length());
 
                 raf.writeInt(ABORT_RECORD);
                 raf.writeLong(tid.getId());
@@ -470,7 +471,7 @@ public class LogFile {
                 preAppend();
                 // some code goes here
                 
-                // seek to tid begin
+                // seek to transaction tid beginning offset
                 long start = tidToFirstLogRecord.get(tid.getId());
                 raf.seek(start);
                 
@@ -559,8 +560,8 @@ public class LogFile {
                     raf.readLong();
                 }
                 
-                // 没有checkpoint则从头开始，有则从checkpoint下一个record开始
-                // 若有checkpoint则后面也有可能开启新的transaction
+                // 没有checkpoint则从头开始，获取transaction start offset
+                // 若有checkpoint则检测其后可能的transaction start offset
                 while (true) {
                     try {
                     	long offset = raf.getFilePointer();
@@ -598,14 +599,15 @@ public class LogFile {
                     }
                 }
                 
-                // 确认r_tidToFirstLogRecord每个tid是commit还是abort或者未完成
-                HashMap<Long,Integer> r_tidToCommited = new HashMap<Long,Integer>();
+                // 确认r_tidToFirstLogRecord每个tid是commit,abort或者未完成
+                HashMap<Long,Integer> r_tidStates = new HashMap<Long,Integer>();
                 Iterator<Entry<Long,Long>> it = r_tidToFirstLogRecord.entrySet().iterator();
                 while(it.hasNext()){
                 	Entry<Long,Long> en = it.next();
                 	
                 	// 默认为未完成，只有找到commit,abort才更新
-                	r_tidToCommited.put(en.getKey(), 0);
+                	// abort实际上已经回滚不做处理，commit->redo,未完成->undo
+                	r_tidStates.put(en.getKey(), INCOMPLETE_RECORD);
                 	
                 	raf.seek(en.getValue());
                 	
@@ -617,12 +619,12 @@ public class LogFile {
                             switch (type) {
                             case ABORT_RECORD:
                             	if(record_tid == en.getKey()){
-                            		r_tidToCommited.put(en.getKey(), ABORT_RECORD);
+                            		r_tidStates.put(en.getKey(), ABORT_RECORD);
                             	}
                                 break;
                             case COMMIT_RECORD:
                             	if(record_tid == en.getKey()){
-                            		r_tidToCommited.put(en.getKey(), COMMIT_RECORD);
+                            		r_tidStates.put(en.getKey(), COMMIT_RECORD);
                             	}
                                 break;
                             case UPDATE_RECORD:
@@ -649,9 +651,9 @@ public class LogFile {
                 }
                 
                // redo
-                Iterator<Entry<Long,Integer>> committed = r_tidToCommited.entrySet().iterator(); 
-                while(committed.hasNext()){
-                	Entry<Long,Integer> en = committed.next();
+                Iterator<Entry<Long,Integer>> itStates = r_tidStates.entrySet().iterator(); 
+                while(itStates.hasNext()){
+                	Entry<Long,Integer> en = itStates.next();
                 	if(en.getValue() != COMMIT_RECORD){
                 		continue;
                 	}
@@ -672,7 +674,7 @@ public class LogFile {
                             	Page before = readPageData(raf);
                                 Page after = readPageData(raf);
                                 if(record_tid == en.getKey()){
-                                	// before and after of the same page id, so just discard either one
+                                	// before and after of the same page id, just discard either one
                                 	Database.getBufferPool().discardPage(before.getId());
                                 	DbFile df = Database.getCatalog().getDatabaseFile(before.getId().getTableId());
                                 	df.writePage(after);
@@ -698,10 +700,10 @@ public class LogFile {
                 }
                 
                // undo
-                Iterator<Entry<Long,Integer>> un_committed = r_tidToCommited.entrySet().iterator(); 
+                Iterator<Entry<Long,Integer>> un_committed = r_tidStates.entrySet().iterator(); 
                 while(un_committed.hasNext()){
                 	Entry<Long,Integer> en = un_committed.next();
-                	if(en.getValue() != 0){
+                	if(en.getValue() != INCOMPLETE_RECORD){
                 		continue;
                 	}
                 	
@@ -721,7 +723,6 @@ public class LogFile {
                             	Page before = readPageData(raf);
                                 Page after = readPageData(raf);
                                 if(record_tid == en.getKey()){
-                                	// before and after of the same page id, so just discard either one
                                 	Database.getBufferPool().discardPage(before.getId());
                                 	DbFile df = Database.getCatalog().getDatabaseFile(before.getId().getTableId());
                                 	df.writePage(before);
@@ -746,10 +747,10 @@ public class LogFile {
                     }
                 }
                 // 对于没有commit和abort的transaction，要写入abort记录
-                Iterator<Entry<Long,Integer>> un_finished = r_tidToCommited.entrySet().iterator();
+                Iterator<Entry<Long,Integer>> un_finished = r_tidStates.entrySet().iterator();
                 while(un_finished.hasNext()){
                 	Entry<Long,Integer> en = un_finished.next();
-                	if(en.getValue() != 0){
+                	if(en.getValue() != INCOMPLETE_RECORD){
                 		continue;
                 	}
                 	

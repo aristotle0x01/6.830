@@ -125,26 +125,6 @@ public class BufferPool {
         throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
-//    	if(commit){
-//    		// flush all pages dirtied by this transaction
-//    		flushPages(tid);
-//    	}else{
-//    		// restore all pages dirtied by this transaction
-//    		Set<PageId> pids = lockManager.getDirtyPageIds(tid);
-//        	for(PageId pid: pids){
-//        		pageStore.remove(pid.hashCode());
-//        		try {
-//					getPage(tid,pid, Permissions.READ_ONLY);
-//				} catch (TransactionAbortedException e) {
-//					// TODO Auto-generated catch block
-//					e.printStackTrace();
-//				} catch (DbException e) {
-//					// TODO Auto-generated catch block
-//					e.printStackTrace();
-//				}
-//        	}
-//    	}
-    	
     	lockManager.unlock(tid);
     }
 
